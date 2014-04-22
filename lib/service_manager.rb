@@ -38,17 +38,39 @@ module ServiceManager
     Hash[services.map { |s| [s.name.to_sym, s]}]
   end
 
-  # Stop all services.  If service wasn't started by this service manager session, don't try and stop it.
-  def stop
-    return unless services.any? { |s| s.process }
-    puts "Stopping the services..."
-    services.map {|s| Thread.new { s.stop } }.map(&:join)
+  def restart &block
+    stop &block
+    start &block
   end
 
-  # Starts all configured services. If service is detected as running already, don't try and start it.
-  def start
-    raise RuntimeError, "No services defined" if services.empty?
-    threads = services.map do |s|
+  # Stop services.  If service wasn't started by this service manager session, don't try and stop it.
+  # A block may be provided to select which services should be stopped, otherwise, all services are stopped
+  def stop &block
+    pending_services = services
+    unless block.nil?
+      pending_services = services.select {|s| block.call(s)}
+    end
+
+    return unless pending_services.any? { |s| s.process }
+    puts "Stopping the services..."
+    pending_services.map {|s| Thread.new { s.stop } }.map(&:join)
+  end
+
+  # Starts configured services. If service is detected as running already, don't try and start it.
+  # A block may be provided to select which services should be started, otherwise, all services are started
+  def start opts={}, &block
+    pending_services = services
+    unless block.nil?
+      pending_services = services.select {|s| block.call(s)}
+    end
+
+    #by default, raise error if no services would be selected by block
+    #can be overridden by :allow_none opt
+    unless opts[:allow_none]
+      raise RuntimeError, "No services defined" if pending_services.empty?
+    end
+
+    threads = pending_services.map do |s|
       Thread.new do
         begin
           s.start
@@ -63,6 +85,11 @@ module ServiceManager
       end
     end
     threads.map(&:join)
+  end
+
+  def running? name
+    pending_services = services.select { |s| s.name == name }
+    pending_services.first.running?
   end
 end
 

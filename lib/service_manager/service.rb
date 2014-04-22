@@ -6,6 +6,9 @@ class ServiceManager::Service
 
   attr_accessor :name, :host, :port, :cwd, :reload_uri, :start_cmd, :process, :loaded_cue, :timeout, :color, :pid_file, :manage_pid_file
 
+  #list of groups this service belongs to
+  attr_accessor :groups
+
   class ServiceDidntStart < Exception; end
 
   def initialize(options = {})
@@ -13,6 +16,7 @@ class ServiceManager::Service
     self.host ||= "localhost"
     self.color ||= ANSI_COLOR_RESET
     self.timeout ||= 30
+    self.groups ||= []
     raise ArgumentError, "You need to provide a name for this app service" unless name
   end
 
