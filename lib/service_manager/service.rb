@@ -1,5 +1,6 @@
 require "thread"
 require "timeout"
+require "childprocess"
 class ServiceManager::Service
   CHDIR_SEMAPHORE = Mutex.new
   ANSI_COLOR_RESET = 0
@@ -29,14 +30,14 @@ class ServiceManager::Service
   end
 
   def watch_for_cue
-    process.detect(:both, timeout) do |output|
+    detect(timeout) do |output|
       STDOUT << colorize(output)
       output =~ loaded_cue
     end
   end
 
   def start_output_stream_thread
-    Thread.new { process.detect { |output| STDOUT << colorize(output); nil} }
+    Thread.new { detect { |output| STDOUT << colorize(output); nil} }
   end
 
   def start_cmd
@@ -61,8 +62,13 @@ class ServiceManager::Service
       puts "Starting #{colorized_service_name} in #{cwd} with '#{start_cmd}'\n"
       Dir.chdir(cwd) do
         without_bundler_env do
-          # system("bash -c set")
-          self.process = PTYBackgroundProcess.run(start_cmd)
+          self.process = ChildProcess.build("/bin/bash", "-c", start_cmd)
+          @r,w = IO.pipe
+          self.process.io.stdout = self.process.io.stderr = w
+          self.process.start
+
+          #closes output on process stop
+          Thread.new {self.process.wait; w.close} 
         end
       end
     end
@@ -76,16 +82,28 @@ class ServiceManager::Service
   def stop
     return unless process
     puts "Shutting down #{colorized_service_name}"
-    process.kill
-    process.wait(3)
-    if process.running?
-      process.kill("KILL") # ok... no more Mr. Nice Guy.
-      process.wait
-    end
+    process.stop
+
     puts "Server #{colorized_service_name} (#{process.pid}) is shut down"
     self.process = nil
     FileUtils.rm(pid_file) if manage_pid_file && File.exist?(pid_file)
     true
+  end
+
+  def detect( timeout = nil, &block)
+    begin
+      Timeout::timeout(timeout) do
+        while !@r.eof? && (content = @r.gets)
+          return nil if content.nil?
+
+          if result = yield(content)
+            return result
+          end
+        end
+      end
+    rescue Timeout::Error
+      nil
+    end
   end
 
   # reload the service by hitting the configured reload_url. In this case, the service needs to be a web service, and needs to have an action that you can hit, in test mode, that will cause the process to gracefully reload itself.
