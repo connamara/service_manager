@@ -1,3 +1,5 @@
+require 'date'
+
 Gem::Specification.new do |s|
   s.name = %q{service_manager}
   s.version = "0.6.4"
