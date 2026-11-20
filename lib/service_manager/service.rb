@@ -82,10 +82,10 @@ class ServiceManager::Service
   def stop
     return unless process
     puts "Shutting down #{colorized_service_name}"
-    Process.kill('TERM', process.pid)       # the signal only, streams stay open
     begin
-      Timeout.timeout(10) { process.wait }  # output is pumped until exit
-    rescue Timeout::Error
+      Process.kill('TERM', process.pid)      # the signal only, streams stay open
+      Timeout.timeout(10) { process.wait }   # output is pumped until exit
+    rescue
       process.stop                           # destroy as the fallback for a hung service
     end
     puts "Server #{colorized_service_name} (#{process.pid}) is shut down"
